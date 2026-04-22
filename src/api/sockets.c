@@ -656,6 +656,125 @@ free_socket(struct lwip_sock *sock, int is_tcp)
   }
 }
 
+int lwip_get_used_sockets()
+{
+    int count = 0;
+    SYS_ARCH_DECL_PROTECT(lev);
+
+    for (int i = 0; i < NUM_SOCKETS; ++i) {
+        /* Protect socket array */
+        SYS_ARCH_PROTECT(lev);
+        if (sockets[i].conn) {
+            count++;
+            SYS_ARCH_UNPROTECT(lev);
+            continue;
+        }
+#if LWIP_NETCONN_FULLDUPLEX
+        if (sockets[i].fd_used) {
+            count++;
+            SYS_ARCH_UNPROTECT(lev);
+            continue;
+        }
+#endif
+        /* The socket is not yet known to anyone, so no need to protect
+           after having marked it as used. */
+        SYS_ARCH_UNPROTECT(lev);
+    }
+
+    return count;
+}
+
+size_t lwip_get_fd_usage_info(struct lwip_fd_usage_info_t *info, size_t len)
+{
+    size_t result = 0;
+
+    SYS_ARCH_DECL_PROTECT(lev);
+
+    if (NUM_SOCKETS < len)
+        len = NUM_SOCKETS;
+
+    for (int i = 0; i < len; ++i) {
+        /* Protect socket array */
+        SYS_ARCH_PROTECT(lev);
+
+        const struct lwip_sock *socket = &sockets[i];
+
+        if (!socket->conn &&
+#if LWIP_NETCONN_FULLDUPLEX
+            !socket->fd_used
+#endif
+        ) {
+            SYS_ARCH_UNPROTECT(lev);
+            continue;
+        }
+
+        struct lwip_fd_usage_info_t *currentInfo = info++;
+        result++;
+
+        currentInfo->fd = i + LWIP_SOCKET_OFFSET;
+
+        currentInfo->fd_threads_used = socket->fd_used;
+
+        if (!socket->conn) {
+            SYS_ARCH_UNPROTECT(lev);
+            currentInfo->valid = false;
+            continue;
+        }
+
+        currentInfo->valid = true;
+        currentInfo->type = socket->conn->type;
+        currentInfo->state = socket->conn->state;
+        currentInfo->local_ip_valid = false;
+        currentInfo->remote_ip_valid = false;
+        currentInfo->local_port_valid = false;
+        currentInfo->remote_port_valid = false;
+
+        switch (NETCONNTYPE_GROUP(netconn_type(socket->conn)))
+        {
+#if LWIP_TCP
+        case NETCONN_TCP:
+            currentInfo->local_ip_valid = true;
+            currentInfo->local_ip = socket->conn->pcb.tcp->local_ip;
+            currentInfo->remote_ip_valid = true;
+            currentInfo->remote_ip = socket->conn->pcb.tcp->remote_ip;
+            currentInfo->local_port_valid = true;
+            currentInfo->local_port = socket->conn->pcb.tcp->local_port;
+            currentInfo->remote_port_valid = true;
+            currentInfo->remote_port = socket->conn->pcb.tcp->remote_port;
+            break;
+#endif
+#if LWIP_UDP
+        case NETCONN_UDP:
+            currentInfo->local_ip_valid = true;
+            currentInfo->local_ip = socket->conn->pcb.udp->local_ip;
+            currentInfo->remote_ip_valid = true;
+            currentInfo->remote_ip = socket->conn->pcb.udp->remote_ip;
+            currentInfo->local_port_valid = true;
+            currentInfo->local_port = socket->conn->pcb.udp->local_port;
+            currentInfo->remote_port_valid = true;
+            currentInfo->remote_port = socket->conn->pcb.udp->remote_port;
+            break;
+#endif
+#if LWIP_RAW
+        case NETCONN_RAW:
+            currentInfo->local_ip_valid = true;
+            currentInfo->local_ip = socket->conn->pcb.raw->local_ip;
+            currentInfo->remote_ip_valid = true;
+            currentInfo->remote_ip = socket->conn->pcb.raw->remote_ip;
+            break;
+#endif
+        default:
+            break;
+        }
+
+        /* The socket is not yet known to anyone, so no need to protect
+           after having marked it as used. */
+        SYS_ARCH_UNPROTECT(lev);
+    }
+
+    return result;
+}
+
 /* Below this, the well-known socket functions are implemented.
  * Use google.com or opengroup.org to get a good description :-)
  *

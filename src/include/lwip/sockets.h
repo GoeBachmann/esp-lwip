@@ -40,6 +40,7 @@
 #define LWIP_HDR_SOCKETS_H
 
 #include "lwip/opt.h"
+#include "lwip/api.h"
 
 #if LWIP_SOCKET /* don't build if not configured for use in lwipopts.h */
 
@@ -591,6 +592,32 @@ int fcntl(int s, int cmd, ...);
 #define ioctlsocket       ioctl
 #endif /* LWIP_POSIX_SOCKETS_IO_NAMES */
 #endif /* LWIP_COMPAT_SOCKETS == 2 */
+
+int lwip_get_used_sockets();
+
+struct lwip_fd_usage_info_t {
+    int fd;
+
+#if LWIP_NETCONN_FULLDUPLEX
+    u8_t fd_threads_used;
+#endif
+
+    bool valid;
+
+    enum netconn_type type;
+    enum netconn_state state;
+
+    bool local_ip_valid;
+    ip_addr_t local_ip;
+    bool remote_ip_valid;
+    ip_addr_t remote_ip;
+    bool local_port_valid;
+    u16_t local_port;
+    bool remote_port_valid;
+    u16_t remote_port;
+};
+
+size_t lwip_get_fd_usage_info(struct lwip_fd_usage_info_t *info, size_t len);
 
 int lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
 int lwip_bind(int s, const struct sockaddr *name, socklen_t namelen);
